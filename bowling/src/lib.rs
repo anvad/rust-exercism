@@ -11,7 +11,7 @@ pub enum Error {
 #[derive(Debug)]
 pub struct BowlingGame {
     rolls: Vec<Roll>, // list of all rolls played so far
-    rolls_left: i16,  // max. number of possible rolls left at any point
+    rolls_left: u16,  // max. number of possible rolls left at any point
     pins_left: u16,   // pins remaining after last roll, range is 1..=10
 }
 
@@ -40,20 +40,20 @@ impl BowlingGame {
         self.rolls_left < 1
     }
 
-    // `rolls_diff` is how many roll count to subtract from `self.rolls_left`
-    // `pins` is how many pins to remove from the lane (i.e. `self.pins_left`)
-    fn append_roll(&mut self, roll: Roll, rolls_diff: i16, pins: u16) -> Result<(), Error> {
+    /// `rolls_diff` is how many roll count to subtract from `self.rolls_left`
+    /// `pins` is how many pins to remove from the lane (i.e. `self.pins_left`)
+    fn append_roll(&mut self, roll: Roll, rolls_diff: u16, pins: u16) -> Result<(), Error> {
         self.pins_left = if self.pins_left == pins {
-            10
+            10 // reset frame
         } else {
             self.pins_left - pins
         };
-        self.rolls_left += rolls_diff;
+        self.rolls_left -= rolls_diff;
         self.rolls.push(roll);
         Ok(())
     }
 
-    // returns the number of completed frames
+    /// returns the number of completed frames
     fn frames(&self) -> u8 {
         self.rolls
             .iter()
@@ -64,30 +64,53 @@ impl BowlingGame {
             })
             .sum()
     }
+    fn validate_roll(&self, pins: u16) -> Result<(), Error> {
+        if self.is_game_done() {
+            Err(Error::GameComplete)
+        } else if pins > self.pins_left {
+            Err(Error::NotEnoughPinsLeft)
+        } else {
+            Ok(())
+        }
+    }
+    fn spare_in_last_frame(&self, pins: u16) -> bool {
+        let frames_played = self.frames();
+        pins == self.pins_left && frames_played == 9
+    }
+    fn strike_in_last_frame(&self, pins: u16) -> bool {
+        let frames_played = self.frames();
+        pins == 10 && frames_played == 9
+    }
+    fn bonus_roll(&self) -> bool {
+        let frames_played = self.frames();
+        frames_played == 10
+    }
+    fn strike(&self, pins: u16) -> bool {
+        pins == 10
+    }
+    fn spare(&self, pins: u16) -> bool {
+        pins == self.pins_left
+    }
 
     pub fn roll(&mut self, pins: u16) -> Result<(), Error> {
-        if self.is_game_done() {
-            return Err(Error::GameComplete);
-        }
-        if pins > self.pins_left {
-            return Err(Error::NotEnoughPinsLeft);
-        }
-        let frames_played = self.frames();
+        self.validate_roll(pins)?;
+
         match self.rolls.last() {
-            Some(First(_)) if pins == self.pins_left && frames_played == 9 => {
+            Some(First(_)) if self.spare_in_last_frame(pins) => {
                 self.append_roll(Spare(pins), 0, pins)
             }
-            Some(First(_)) if pins == self.pins_left => self.append_roll(Spare(pins), -1, pins),
-            Some(First(_)) => self.append_roll(Open(pins), -1, self.pins_left),
+            Some(First(_)) if self.spare(pins) => self.append_roll(Spare(pins), 1, pins),
+            Some(First(_)) => self.append_roll(Open(pins), 1, self.pins_left),
 
             // None or Spare or Open or Strike => Strike or First() or Bonus()
-            _ if frames_played == 10 => self.append_roll(Bonus(pins), -1, pins),
-            _ if pins == 10 && frames_played == 9 => self.append_roll(Strike, 0, pins),
-            _ if pins == 10 => self.append_roll(Strike, -2, pins),
-            _ => self.append_roll(First(pins), -1, pins),
+            _ if self.bonus_roll() => self.append_roll(Bonus(pins), 1, pins),
+            _ if self.strike_in_last_frame(pins) => self.append_roll(Strike, 0, pins),
+            _ if self.strike(pins) => self.append_roll(Strike, 2, pins),
+            _ => self.append_roll(First(pins), 1, pins),
         }
     }
 
+    /// returns points accrued for each roll, including bonus points
     fn roll_points(&self, i: usize) -> u16 {
         let roll = &self.rolls.get(i);
         let bonus1 = &self.rolls.get(i + 1);
