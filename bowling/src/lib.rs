@@ -4,112 +4,120 @@ pub enum Error {
     GameComplete,
 }
 
-// technically, all we need to store is the sequence of pins rolled
+// all we need to store is the sequence of pins rolled
 //  and number of frames, score in each frame, whether game is done can
 //  be calculated from that
-// but, i am adding redundancy (memoization?) to make it easier to navigate
-//  so that i don't have to recalculate frame/score after each roll
+
+#[derive(Debug)]
 pub struct BowlingGame {
-    // game is done when frames.len() == 10 and every frame is complete
-    frames: Vec<Frame>,
+    rolls: Vec<Roll>, // list of all rolls played so far
+    rolls_left: i16,  // max. number of possible rolls left at any point
+    pins_left: u16,   // pins remaining after last roll, range is 1..=10
 }
 
-// score of a frame is sum of rolls
-// if strike, then 2nd and 3rd rolls are really fill slots
-// if spare, then 3rd roll is really fill slot
-// if neither strike nor spare, then fill slot will be set to 0
-// frame is considered done when rolls.len() == 3
-struct Frame {
-    rolls: Vec<u16>, // always a vec of size 3 when complete
-    state: FrameState,
+// the number stores the number of pins that fell in this roll
+#[derive(PartialEq, Debug)]
+enum Roll {
+    First(u16), // first roll, so frame is not done yet
+    Open(u16),  // after 2nd roll, if pins are still standing, then we have an open frame
+    Strike,     // frame is done after just one roll!
+    Spare(u16), // frame is complete, but needed two rolls
+    Bonus(u16), // Bonus ball after all frames are done
 }
 
-#[derive(PartialEq)]
-enum FrameState {
-    InProgress,    // set to InProgress when previous Frame is NOT InProgress
-    StrikeOrSpare, // set to this after a strike or spare
-    Complete,      // set to Complete after fill slots are filled
-}
+use Roll::*;
 
 impl BowlingGame {
     pub fn new() -> Self {
-        Self { frames: vec![] }
+        Self {
+            rolls: vec![],
+            rolls_left: 20,
+            pins_left: 10,
+        }
     }
 
     fn is_game_done(&self) -> bool {
-        self.frames.len() == 10 && self.frames.iter().all(|f| f.state == FrameState::Complete)
+        self.rolls_left < 1
     }
 
-    // roll can be 1st or 2nd roll of a frame
-    //  or it could be fill-ball1 or fill-ball2
+    // `rolls_diff` is how many roll count to subtract from `self.rolls_left`
+    // `pins` is how many pins to remove from the lane (i.e. `self.pins_left`)
+    fn append_roll(&mut self, roll: Roll, rolls_diff: i16, pins: u16) -> Result<(), Error> {
+        self.pins_left = if self.pins_left == pins {
+            10
+        } else {
+            self.pins_left - pins
+        };
+        self.rolls_left += rolls_diff;
+        self.rolls.push(roll);
+        Ok(())
+    }
+
+    // returns the number of completed frames
+    fn frames(&self) -> u8 {
+        self.rolls
+            .iter()
+            .map(|r| match *r {
+                Roll::First(_) => 0,
+                Roll::Bonus(_) => 0,
+                _ => 1,
+            })
+            .sum()
+    }
+
     pub fn roll(&mut self, pins: u16) -> Result<(), Error> {
-        use crate::FrameState::*;
         if self.is_game_done() {
             return Err(Error::GameComplete);
         }
-        if pins > 10 {
+        if pins > self.pins_left {
             return Err(Error::NotEnoughPinsLeft);
         }
+        let frames_played = self.frames();
+        match self.rolls.last() {
+            Some(First(_)) if pins == self.pins_left && frames_played == 9 => {
+                self.append_roll(Spare(pins), 0, pins)
+            }
+            Some(First(_)) if pins == self.pins_left => self.append_roll(Spare(pins), -1, pins),
+            Some(First(_)) => self.append_roll(Open(pins), -1, self.pins_left),
 
-        // get current frame (creating it if necessary)
-        let cur_frame_index = self.get_current_frame();
-        if cur_frame_index.is_none() {
-            // check to make sure we had enough pins
-            return Ok(());
+            // None or Spare or Open or Strike => Strike or First() or Bonus()
+            _ if frames_played == 10 => self.append_roll(Bonus(pins), -1, pins),
+            _ if pins == 10 && frames_played == 9 => self.append_roll(Strike, 0, pins),
+            _ if pins == 10 => self.append_roll(Strike, -2, pins),
+            _ => self.append_roll(First(pins), -1, pins),
         }
+    }
 
-        // update previous frames that are in StrikeOrSpare state
-        self.frames
-            .iter_mut()
-            .filter(|f| f.state == StrikeOrSpare)
-            .for_each(|f| f.rolls.push(pins));
-        self.frames
-            .iter_mut()
-            .filter(|f| f.state == StrikeOrSpare && f.rolls.len() == 3)
-            .for_each(|f| f.state = Complete);
-
-        // update pins for cur_frame
-        // at this point, cur_frame will be in InProgress state
-        let mut cur_frame = &mut self.frames[cur_frame_index.unwrap()];
-        let sum = cur_frame.rolls.get(0).unwrap_or(&0) + pins;
-        if sum > 10 {
-            return Err(Error::NotEnoughPinsLeft);
+    fn roll_points(&self, i: usize) -> u16 {
+        let roll = &self.rolls.get(i);
+        let bonus1 = &self.rolls.get(i + 1);
+        let bonus2 = &self.rolls.get(i + 2);
+        match (*roll, *bonus1, *bonus2) {
+            (Some(Strike), Some(f1), Some(f2)) => 10 + roll_pins(f1) + roll_pins(f2),
+            (Some(Spare(p)), Some(f1), _) => *p + roll_pins(f1),
+            (Some(Open(p)), ..) => *p,
+            (Some(First(p)), ..) => *p,
+            _ => 0,
         }
-        cur_frame.rolls.push(pins);
-
-        // finally update state of current frame
-        if sum == 10 {
-            cur_frame.state = StrikeOrSpare;
-        } else if cur_frame.rolls.len() == 2 {
-            cur_frame.state = Complete;
-        }
-
-        Ok(())
     }
 
     pub fn score(&self) -> Option<u16> {
         if self.is_game_done() {
-            Some(self.frames.iter().flat_map(|f| f.rolls.iter()).sum())
+            let sum = (0..self.rolls.len()).map(|i| self.roll_points(i)).sum();
+            Some(sum)
         } else {
             None
         }
     }
+}
 
-    /// returns index of current frame unless all frames are played out
-    fn get_current_frame(&mut self) -> Option<usize> {
-        use crate::FrameState::*;
-        let num_frames = self.frames.len();
-        match self.frames.last() {
-            Some(frame) if frame.state == InProgress => Some(num_frames - 1),
-            _ if num_frames == 10 => None, // all 10 frames have been played
-            _ => {
-                let frame = Frame {
-                    rolls: vec![],
-                    state: InProgress,
-                };
-                self.frames.push(frame);
-                Some(num_frames)
-            }
-        }
+// given a &Roll, returns the number of pins that fell
+fn roll_pins(roll: &Roll) -> u16 {
+    match *roll {
+        First(p) => p,
+        Open(p) => p,
+        Spare(p) => p,
+        Strike => 10,
+        Bonus(p) => p,
     }
 }
