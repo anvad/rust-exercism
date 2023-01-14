@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 // This annotation prevents Clippy from warning us that `School` has a
 // `fn new()` with no arguments, but doesn't implement the `Default` trait.
@@ -8,12 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 // of this exercise.
 #[allow(clippy::new_without_default)]
 pub struct School {
-    // because we want to grades to be returned as an ordered list
-    //  and the students within a grade to also be returned as an ordered list
-    //  it made sense to use BTreeMap and BTreeSet, rather than use
-    //  HashMap and a Vec and call sort on HashMap output each time `.grades()` is called
-    //  for students, Vec makes more sense than BTreeSet, since multiple students can have same name
-    roster: BTreeMap<u32, BTreeSet<String>>,
+    // because we want to grades to be returned as an ordered list and the
+    //  students within a grade to also be returned as an ordered list, it made
+    //  sense to use BTreeMap and BTreeSet, rather than use HashMap and Vec and
+    //  call `sort()` on HashMap output each time `.grades()` is called.
+    // Actually, for students, Vec makes more sense than BTreeSet, since multiple
+    //  students within a grade may have same name.
+    roster: BTreeMap<u32, Vec<String>>,
 }
 
 impl School {
@@ -27,9 +28,13 @@ impl School {
         self.roster
             .entry(grade)
             .and_modify(|students| {
-                students.insert(student.to_owned());
+                students.push(student.to_owned());
+                // better to sort while adding than retrieving if you
+                //  think that many more retrieval calls will be made,
+                //  compared to `add` calls
+                students.sort();
             })
-            .or_insert(BTreeSet::from([student.to_owned()]));
+            .or_insert([student.to_owned()].to_vec());
     }
 
     pub fn grades(&self) -> Vec<u32> {
@@ -43,7 +48,7 @@ impl School {
     pub fn grade(&self, grade: u32) -> Vec<String> {
         self.roster
             .get(&grade)
-            .unwrap_or(&BTreeSet::new())
+            .unwrap_or(&Vec::new())
             .iter()
             .cloned()
             .collect()
