@@ -1,19 +1,11 @@
+// i had used a convoluted signature for `with_nodes()` and
+//  `with_edges()` methods using `AsRef` in my previous implementation.
+// looking at rochard4u's solution, i see i could have just used `&[Node]` etc.
+// i see roybcr's solution used `.cloned()` to succinctly implement `with_nodes()`
+
 pub mod graph {
-    use std::collections::HashMap;
-
     use self::graph_items::{edge::Edge, node::Node};
-
-    pub trait WithAttrs<'a> {
-        fn with_attrs(
-            ah: &'a mut HashMap<String, String>,
-            attrs: &[(&str, &str)],
-        ) -> &'a HashMap<String, String> {
-            attrs.iter().for_each(|(k, v)| {
-                ah.insert(k.to_string(), v.to_string());
-            });
-            ah
-        }
-    }
+    use std::collections::HashMap;
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]
     pub struct Graph {
@@ -27,26 +19,23 @@ pub mod graph {
             Default::default()
         }
 
-        pub fn with_nodes<S: AsRef<[T]>, T: AsRef<Node>>(mut self, nodes: S) -> Self {
-            nodes
-                .as_ref()
-                .iter()
-                .for_each(|n| self.nodes.push(n.as_ref().clone()));
+        pub fn with_nodes(mut self, nodes: &[Node]) -> Self {
+            self.nodes.extend(nodes.iter().cloned());
             self
         }
-        pub fn with_edges<S: AsRef<[T]>, T: AsRef<Edge>>(mut self, edges: S) -> Self {
-            edges
-                .as_ref()
-                .iter()
-                .for_each(|e| self.edges.push(e.as_ref().clone()));
+
+        pub fn with_edges(mut self, edges: &[Edge]) -> Self {
+            self.edges.extend(edges.iter().cloned());
             self
         }
+
         pub fn with_attrs(mut self, attrs: &[(&str, &str)]) -> Self {
             attrs.iter().for_each(|(k, v)| {
                 self.attrs.insert(k.to_string(), v.to_string());
             });
             self
         }
+
         pub fn node(&self, node_label: &str) -> Option<&Node> {
             self.nodes.iter().find(|n| n.label == node_label)
         }
@@ -69,24 +58,18 @@ pub mod graph {
                         attrs: Default::default(),
                     }
                 }
+
                 pub fn with_attrs(mut self, attrs: &[(&str, &str)]) -> Self {
                     attrs.iter().for_each(|(k, v)| {
                         self.attrs.insert(k.to_string(), v.to_string());
                     });
                     self
                 }
+
                 pub fn attr(&self, key: &str) -> Option<&str> {
                     self.attrs.get(key).map(|v| &v[..])
                 }
             }
-
-            impl AsRef<Self> for Node {
-                fn as_ref(&self) -> &Self {
-                    &self
-                }
-            }
-
-            // impl<'a> crate::graph::WithAttrs<'a> for Node {}
         }
 
         pub mod edge {
@@ -107,19 +90,16 @@ pub mod graph {
                         attrs: Default::default(),
                     }
                 }
+
                 pub fn with_attrs(mut self, attrs: &[(&str, &str)]) -> Self {
                     attrs.iter().for_each(|(k, v)| {
                         self.attrs.insert(k.to_string(), v.to_string());
                     });
                     self
                 }
+
                 pub fn attr(&self, key: &str) -> Option<&str> {
                     self.attrs.get(key).map(|v| &v[..])
-                }
-            }
-            impl AsRef<Self> for Edge {
-                fn as_ref(&self) -> &Self {
-                    &self
                 }
             }
         }
