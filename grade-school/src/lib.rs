@@ -46,11 +46,7 @@ impl School {
     // the internal structure can be completely arbitrary. The tradeoff is that some data
     // must be copied each time `grade` is called.
     pub fn grade(&self, grade: u32) -> Vec<String> {
-        self.roster
-            .get(&grade)
-            .unwrap_or(&Vec::new())
-            .iter()
-            .cloned()
-            .collect()
+        // `.clone()` collects too, so no need to `iter()`, then `cloned()`, then `collect()`
+        self.roster.get(&grade).unwrap_or(&Vec::new()).clone()
     }
 }
