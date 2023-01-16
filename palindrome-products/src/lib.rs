@@ -1,3 +1,5 @@
+// use std::collections::{BTreeSet, HashSet};
+
 /// `Palindrome` is a newtype which only exists when the contained value is a palindrome number in base ten.
 ///
 /// A struct with a single field which is used to constrain behavior like this is called a "newtype", and its use is
@@ -16,13 +18,6 @@ impl Palindrome {
         }
         nums.push(num as u8);
 
-        // let max = nums.len() - 1;
-        // for i in 0..=max {
-        //     if nums[i] != nums[max - i] {
-        //         return None;
-        //     }
-        // }
-
         let (mut i, mut j) = (0, nums.len() - 1);
         while i < j {
             if nums[i] != nums[j] {
@@ -31,16 +26,14 @@ impl Palindrome {
             (i, j) = (i + 1, j - 1);
         }
 
-        // // this is slightly slower than using the modulo operator
-        // let val_str = format!("{}", value);
-        // let nums = val_str.as_bytes();
-        // let (mut i, mut j) = (0, nums.len() - 1);
-        // while i < j {
-        //     if nums[i] != nums[j] {
+        // let max = nums.len() - 1;
+        // let max2 = max / 2;
+        // for i in 0..max2 {
+        //     if nums[i] != nums[max - i] {
         //         return None;
         //     }
-        //     (i, j) = (i + 1, j - 1);
         // }
+
         Some(Palindrome(value))
     }
 
@@ -54,13 +47,18 @@ pub fn palindrome_products(min: u64, max: u64) -> Option<(Palindrome, Palindrome
     if min > max {
         return None;
     }
+    // let mut nums = HashSet::<u64>::new(); // using hashSet is slow!
+    // let mut nums = BTreeSet::<u64>::new(); // BTreeSet is worse!
     let mut palindromes = Vec::<Palindrome>::new();
     for i in min..=max {
         for j in i..=max {
-            let p = Palindrome::new(i * j);
+            let num = i * j;
+            // if nums.insert(num) {
+            let p = Palindrome::new(num);
             if p.is_some() {
                 palindromes.push(p.unwrap())
             }
+            // }
         }
     }
     if palindromes.len() > 0 {
