@@ -1,69 +1,37 @@
+// sophie-cyborg's solution is elegant. It removes some duplication
+//  and also ties both structs together. i've reproduced her solution below
+
 use std::io::{Read, Result, Write};
 
-pub struct ReadStats<R> {
-    bytes_read: usize,
+pub type ReadStats<T> = IOStats<T>;
+pub type WriteStats<T> = IOStats<T>;
+pub struct IOStats<T> {
+    bytes_through: usize,
     reads: usize,
-    wrapped: R,
-}
-
-impl<R: Read> ReadStats<R> {
-    // _wrapped is ignored because R is not bounded on Debug or Display and therefore
-    // can't be passed through format!(). For actual implementation you will likely
-    // wish to remove the leading underscore so the variable is not ignored.
-    pub fn new(wrapped: R) -> ReadStats<R> {
-        Self {
-            bytes_read: 0,
-            reads: 0,
-            wrapped,
-        }
-    }
-
-    pub fn get_ref(&self) -> &R {
-        &self.wrapped
-    }
-
-    pub fn bytes_through(&self) -> usize {
-        self.bytes_read
-    }
-
-    pub fn reads(&self) -> usize {
-        self.reads
-    }
-}
-
-impl<R: Read> Read for ReadStats<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let bytes_read = self.wrapped.read(buf)?;
-        self.reads += 1;
-        self.bytes_read += bytes_read;
-        Ok(bytes_read)
-    }
-}
-
-pub struct WriteStats<W> {
-    bytes_written: usize,
     writes: usize,
-    wrapped: W,
+    wrapped: T,
 }
 
-impl<W: Write> WriteStats<W> {
-    // _wrapped is ignored because W is not bounded on Debug or Display and therefore
-    // can't be passed through format!(). For actual implementation you will likely
-    // wish to remove the leading underscore so the variable is not ignored.
-    pub fn new(wrapped: W) -> WriteStats<W> {
+impl<T> IOStats<T> {
+    pub fn new(wrapped: T) -> IOStats<T> {
         Self {
-            bytes_written: 0,
+            bytes_through: 0,
+            reads: 0,
             writes: 0,
             wrapped,
         }
     }
 
-    pub fn get_ref(&self) -> &W {
+    pub fn get_ref(&self) -> &T {
         &self.wrapped
     }
 
     pub fn bytes_through(&self) -> usize {
-        self.bytes_written
+        self.bytes_through
+    }
+
+    pub fn reads(&self) -> usize {
+        self.reads
     }
 
     pub fn writes(&self) -> usize {
@@ -71,11 +39,20 @@ impl<W: Write> WriteStats<W> {
     }
 }
 
-impl<W: Write> Write for WriteStats<W> {
+impl<R: Read> Read for IOStats<R> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let bytes_read = self.wrapped.read(buf)?;
+        self.reads += 1;
+        self.bytes_through += bytes_read;
+        Ok(bytes_read)
+    }
+}
+
+impl<W: Write> Write for IOStats<W> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let bytes_written = self.wrapped.write(buf)?;
         self.writes += 1;
-        self.bytes_written += bytes_written;
+        self.bytes_through += bytes_written;
         Ok(bytes_written)
     }
 
