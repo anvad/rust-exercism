@@ -24,7 +24,7 @@ fn process_largest_case((from, to): (u64, u64), expected: Option<u64>) {
 #[test]
 /// test `Palindrome::new` with valid input
 fn test_palindrome_new_return_some() {
-    for v in [1, 11, 121, 12321, 1234321, 123454321, 543212345] {
+    for v in [1, 11, 121, 10201, 12321, 1234321, 123454321, 543212345] {
         assert_eq!(Palindrome::new(v).expect("is a palindrome").into_inner(), v);
     }
 }
@@ -33,7 +33,7 @@ fn test_palindrome_new_return_some() {
 #[ignore]
 /// test `Palindrome::new` with invalid input
 fn test_palindrome_new_return_none() {
-    for v in [12, 2322, 23443, 1233211, 8932343] {
+    for v in [100, 12, 2322, 23443, 1233211, 8932343] {
         assert_eq!(Palindrome::new(v), None);
     }
 }
