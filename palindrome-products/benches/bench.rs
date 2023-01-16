@@ -13,7 +13,7 @@ fn test_palindrome_new_return_some(b: &mut Bencher) {
     });
 }
 
-// #[bench]
-// fn test_find_smallest_palindrome_from_four_digit_factors(b: &mut Bencher) {
-//     b.iter(|| palindrome_products(1000, 9999));
-// }
+#[bench]
+fn test_find_smallest_palindrome_from_four_digit_factors(b: &mut Bencher) {
+    b.iter(|| palindrome_products(1000, 9999));
+}
