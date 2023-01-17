@@ -1,3 +1,6 @@
+// bupknar's solution is recursive (new triangle is old triangle + 1 more row) with zip
+// jan-schreib's solution directly calculates nth row, so it can be used to generate a particular row without calculating all the previous rows
+
 pub struct PascalsTriangle(u32);
 
 impl PascalsTriangle {
