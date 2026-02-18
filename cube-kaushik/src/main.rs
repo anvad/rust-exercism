@@ -103,28 +103,9 @@ impl State {
         }
     }
 
-    /// if the piece overlaps with another piece, return false
-    /// else update the state to reflect the piece being added and return true
-    fn try_fill_positions(&self, pos: &Position, piece: &Piece) -> (bool, Vec<bool>) {
-        // vec clone retains original capacity
-        let mut filled_positions = self.filled_positions.clone();
-        for x in pos.x..(pos.x + piece.orientation.x) {
-            for y in pos.y..(pos.y + piece.orientation.y) {
-                for z in pos.z..(pos.z + piece.orientation.z) {
-                    let unit_cube_pos_idx = get_index_from_position_coords(x, y, z);
-                    if filled_positions[unit_cube_pos_idx] {
-                        return (false, self.filled_positions.clone());
-                    }
-                    filled_positions[unit_cube_pos_idx] = true;
-                }
-            }
-        }
-        (true, filled_positions)
-    }
-
     /// if successful in pushing piece, return new state with piece added and filled_positions updated
     /// else return None, i.e. state is unchanged
-    fn try_push_piece(&self, pos: &Position, piece_idx: usize) -> Option<Self> {
+    fn try_push_piece(&mut self, pos: &Position, piece_idx: usize) -> bool {
         let piece = &POSSIBLE_PIECES[piece_idx];
         let no_unused_piece = match piece.piece_type {
             PieceType::Long => self.cube_unused_piece_nums.long <= 0,
@@ -132,34 +113,44 @@ impl State {
             PieceType::Tiny => self.cube_unused_piece_nums.tiny <= 0,
         };
         if no_unused_piece {
-            return None;
+            return false;
         }
         let piece_sticks_out = pos.x + piece.orientation.x > CUBE_SIZE
             || pos.y + piece.orientation.y > CUBE_SIZE
             || pos.z + piece.orientation.z > CUBE_SIZE;
         if piece_sticks_out {
-            return None;
+            return false;
         }
-        let (successfull, filled_positions) = self.try_fill_positions(pos, piece);
+        let (successfull, filled_positions) =
+            try_fill_positions(self.filled_positions.clone(), pos, piece);
         if !successfull {
-            return None;
+            return false;
         }
-        let mut cube_piece_idxs = self.cube_piece_idxs.clone();
-        cube_piece_idxs.push(piece_idx);
-        let mut cube_piece_positions = self.cube_piece_positions.clone();
-        cube_piece_positions.push(*pos);
-        let mut cube_unused_piece_nums: UnusedPieces = self.cube_unused_piece_nums;
+        self.filled_positions = filled_positions;
+        self.cube_piece_idxs.push(piece_idx);
+        self.cube_piece_positions.push(*pos);
         match piece.piece_type {
-            PieceType::Long => cube_unused_piece_nums.long -= 1,
-            PieceType::Short => cube_unused_piece_nums.short -= 1,
-            PieceType::Tiny => cube_unused_piece_nums.tiny -= 1,
+            PieceType::Long => self.cube_unused_piece_nums.long -= 1,
+            PieceType::Short => self.cube_unused_piece_nums.short -= 1,
+            PieceType::Tiny => self.cube_unused_piece_nums.tiny -= 1,
         };
-        Some(State {
-            cube_piece_idxs,
-            cube_piece_positions,
-            cube_unused_piece_nums,
-            filled_positions,
-        })
+        true
+        // let mut cube_piece_idxs = self.cube_piece_idxs.clone();
+        // cube_piece_idxs.push(piece_idx);
+        // let mut cube_piece_positions = self.cube_piece_positions.clone();
+        // cube_piece_positions.push(*pos);
+        // let mut cube_unused_piece_nums: UnusedPieces = self.cube_unused_piece_nums;
+        // match piece.piece_type {
+        //     PieceType::Long => cube_unused_piece_nums.long -= 1,
+        //     PieceType::Short => cube_unused_piece_nums.short -= 1,
+        //     PieceType::Tiny => cube_unused_piece_nums.tiny -= 1,
+        // };
+        // Some(State {
+        //     cube_piece_idxs,
+        //     cube_piece_positions,
+        //     cube_unused_piece_nums,
+        //     filled_positions,
+        // })
     }
 
     fn print_solution(&self) {
@@ -185,19 +176,26 @@ impl State {
     /// if state is not valid, return None
     /// if all pieces are placed, return Some(state)
     /// if all children are tried, return None
-    fn find_next(self, nodes_traversed: &mut u32) -> Option<Self> {
+    fn find_next(
+        &mut self,
+        nodes_traversed: &mut u32,
+        backtrack: &mut u32,
+        num_find_next_called: &mut u32,
+    ) -> bool {
+        *num_find_next_called += 1;
         let Some(position_idx) = self.calc_next_position_idx() else {
             if self.cube_piece_idxs.len() == NUM_PIECES {
                 println!("1. Found a solution since all {NUM_PIECES} pieces are placed");
-                return Some(self);
+                return true;
             } else {
                 println!(
                     "All positions are filled but not all pieces are used up! {:?}",
                     self.cube_piece_idxs
                 );
-                return None;
+                return false;
             }
         };
+        let orig_state = self.clone();
         let position = get_position_from_index(position_idx);
         // loop thru all possible pieces and orientations
         // if piece fits in the position
@@ -208,17 +206,28 @@ impl State {
         let max = POSSIBLE_PIECES.len();
         for possible_piece_idx in 0..max {
             *nodes_traversed += 1;
-            if let Some(new_state) = self.try_push_piece(&position, possible_piece_idx) {
-                if new_state.cube_piece_idxs.len() == NUM_PIECES {
+            let successful = self.try_push_piece(&position, possible_piece_idx);
+            if successful {
+                if self.cube_piece_idxs.len() == NUM_PIECES {
                     println!("2. Found a solution since all {NUM_PIECES} pieces are placed");
                     // print_solution(new_state)
-                    return Some(new_state);
-                } else if let Some(result) = new_state.find_next(nodes_traversed) {
-                    return Some(result);
+                    return true;
+                } else if self.find_next(nodes_traversed, backtrack, num_find_next_called) {
+                    return true;
+                } else {
+                    *backtrack += 1;
+                    *self = orig_state.clone();
+                    // everytime i backtrack, i want to return to original state
+                    // println!(
+                    //     "Backtracking from piece idx {} at position {:?} with orientation {:?}",
+                    //     possible_piece_idx,
+                    //     position,
+                    //     POSSIBLE_PIECES[possible_piece_idx].orientation
+                    // );
                 }
             }
         }
-        None
+        false
     }
 }
 
@@ -240,15 +249,44 @@ fn get_index_from_position_coords(x: usize, y: usize, z: usize) -> usize {
 //     get_index_from_position_coords(pos.x, pos.y, pos.z)
 // }
 
+/// if the piece overlaps with another piece, return false
+/// else update the state to reflect the piece being added and return true
+fn try_fill_positions(
+    orig_filled_positions: Vec<bool>,
+    pos: &Position,
+    piece: &Piece,
+) -> (bool, Vec<bool>) {
+    // vec clone retains original capacity
+    let mut filled_positions = orig_filled_positions.clone();
+    for x in pos.x..(pos.x + piece.orientation.x) {
+        for y in pos.y..(pos.y + piece.orientation.y) {
+            for z in pos.z..(pos.z + piece.orientation.z) {
+                let unit_cube_pos_idx = get_index_from_position_coords(x, y, z);
+                if filled_positions[unit_cube_pos_idx] {
+                    return (false, orig_filled_positions);
+                }
+                filled_positions[unit_cube_pos_idx] = true;
+            }
+        }
+    }
+    (true, filled_positions)
+}
+
 fn main() {
     let mut nodes_traversed = 0u32;
-    let state = State::new();
-    let solution_found = state.find_next(&mut nodes_traversed);
-    if let Some(new_state) = solution_found {
-        new_state.print_solution();
+    let mut backtrack = 0u32;
+    let mut num_find_next_called = 0u32;
+    let mut state = State::new();
+    let solution_found = state.find_next(
+        &mut nodes_traversed,
+        &mut backtrack,
+        &mut num_find_next_called,
+    );
+    if solution_found {
+        state.print_solution();
         println!(
-            "num_filled_positions={}, num_nodes_traversed={}",
-            new_state
+            "num_filled_positions={}, num_nodes_traversed={}, num_backtracks={}, num_find_next_called={}",
+            state
                 .filled_positions
                 .iter()
                 .filter(|v| **v)
@@ -256,6 +294,8 @@ fn main() {
                 .collect::<Vec<bool>>()
                 .len(),
             nodes_traversed,
+            backtrack,
+            num_find_next_called
         );
     } else {
         println!("No solution found!")
@@ -272,12 +312,18 @@ mod tests {
     fn bench_main() {
         let start = std::time::Instant::now();
         let mut nodes_traversed = 0u32;
-        let state = State::new();
-        let solution_found = state.find_next(&mut nodes_traversed);
+        let mut backtrack = 0u32;
+        let mut num_find_next_called = 0u32;
+        let mut state = State::new();
+        let solution_found = state.find_next(
+            &mut nodes_traversed,
+            &mut backtrack,
+            &mut num_find_next_called,
+        );
         let duration = start.elapsed();
         println!("Time elapsed: {:?}", duration);
-        if let Some(new_state) = solution_found {
-            new_state.print_solution();
+        if solution_found {
+            state.print_solution();
         }
     }
 }
